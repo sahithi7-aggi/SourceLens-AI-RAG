@@ -1,0 +1,15 @@
+streamlit
+langchain
+langchain-community
+langchain-text-splitters
+langchain-huggingface
+langchain-chroma
+langchain-groq
+chromadb
+unstructured
+sentence-transformers==2.7.0
+transformers==4.40.2
+torch==2.2.2+cpu
+numpy==1.26.4
+
+requests
