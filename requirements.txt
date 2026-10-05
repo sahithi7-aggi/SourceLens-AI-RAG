@@ -6,10 +6,10 @@ langchain-huggingface
 langchain-chroma
 langchain-groq
 chromadb
-unstructured
+chroma-hnswlib
+beautifulsoup4
 sentence-transformers==2.7.0
 transformers==4.40.2
 torch==2.2.2
 numpy==1.26.4
-
 requests

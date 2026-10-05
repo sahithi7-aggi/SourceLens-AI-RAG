@@ -1,166 +1,196 @@
 from urllib.parse import urlparse
 
 import requests
-from langchain_community.document_loaders import UnstructuredURLLoader
+from bs4 import BeautifulSoup
+from langchain_core.documents import Document
 
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/140.0 Safari/537.36 SourceLensAI/1.0"
+    "Chrome/131.0.0.0 Safari/537.36"
 )
+
+TIMEOUT = 20
 
 
 def normalize_urls(urls):
-    """Clean, validate and deduplicate HTTP(S) URLs."""
-    cleaned = []
-    seen = set()
+    """Clean, validate and deduplicate URLs."""
+    normalized = []
 
-    for raw_url in urls:
-        url = raw_url.strip()
+    for url in urls:
+        url = url.strip()
+
         if not url:
             continue
 
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        if not url.startswith(("http://", "https://")):
             continue
 
-        if url not in seen:
-            cleaned.append(url)
-            seen.add(url)
+        parsed = urlparse(url)
 
-    return cleaned
+        if not parsed.netloc:
+            continue
 
+        if url not in normalized:
+            normalized.append(url)
 
-def _explain_exception(exc):
-    """Turn common loader errors into user-friendly messages."""
-    message = str(exc).strip()
-    lower = message.lower()
-
-    if "403" in lower or "forbidden" in lower:
-        return "Access denied (HTTP 403). The website may block automated readers."
-    if "404" in lower or "not found" in lower:
-        return "Page not found (HTTP 404). Check that the URL is correct."
-    if "401" in lower or "unauthorized" in lower:
-        return "Authentication required (HTTP 401). This page may be private or login-protected."
-    if "429" in lower or "too many requests" in lower:
-        return "The website is rate-limiting requests (HTTP 429). Try again later."
-    if "timeout" in lower or "timed out" in lower:
-        return "The website took too long to respond."
-    if "ssl" in lower or "certificate" in lower:
-        return "The secure connection could not be established because of an SSL/certificate problem."
-    if "connection" in lower or "max retries" in lower:
-        return "Could not connect to the website. It may be unavailable or blocking automated requests."
-
-    return f"The page could not be extracted: {message or 'unknown extraction error'}"
+    return normalized
 
 
-def _preflight_url(url):
-    """Check whether a page is reachable before extraction."""
-    try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=15,
-            allow_redirects=True,
+def _fetch_page(url):
+    """Fetch a webpage and return its HTML."""
+    response = requests.get(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": (
+                "text/html,application/xhtml+xml,"
+                "application/xml;q=0.9,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout=TIMEOUT,
+        allow_redirects=True,
+    )
+
+    response.raise_for_status()
+
+    content_type = response.headers.get("Content-Type", "").lower()
+
+    if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+        raise ValueError(
+            f"Unsupported content type: {content_type or 'unknown'}"
         )
-    except requests.exceptions.Timeout:
-        return False, "The website took too long to respond."
-    except requests.exceptions.SSLError:
-        return False, "SSL/certificate verification failed."
-    except requests.exceptions.RequestException as exc:
-        return False, f"Could not connect to the website: {exc}"
 
-    status = response.status_code
+    return response.text, response.url
 
-    if status == 401:
-        return False, "Authentication required (HTTP 401)."
-    if status == 403:
-        return False, "Access denied (HTTP 403). The website may block automated readers."
-    if status == 404:
-        return False, "Page not found (HTTP 404)."
-    if status == 429:
-        return False, "The website is rate-limiting requests (HTTP 429)."
-    if status >= 400:
-        return False, f"The website returned HTTP {status}."
 
-    content_type = response.headers.get("content-type", "").lower()
-    if content_type and not any(
-        kind in content_type
-        for kind in (
-            "text/html",
-            "application/xhtml",
-            "text/plain",
-            "application/pdf",
-        )
+def _extract_text(html):
+    """Extract readable text from an HTML page."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Remove elements that generally contain navigation,
+    # styling, scripts, or other non-content information.
+    for element in soup(
+        [
+            "script",
+            "style",
+            "noscript",
+            "svg",
+            "nav",
+            "footer",
+            "header",
+            "aside",
+            "form",
+        ]
     ):
-        return False, f"The URL returned unsupported content type: {content_type}."
+        element.decompose()
 
-    if not response.content.strip():
-        return False, "The server returned an empty response."
+    # Prefer the main article/content area when available.
+    main = (
+        soup.find("main")
+        or soup.find("article")
+        or soup.find(attrs={"role": "main"})
+    )
 
-    return True, None
+    target = main if main else soup
+
+    text = target.get_text(separator="\n", strip=True)
+
+    # Remove excessive blank lines.
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    return "\n".join(lines)
+
+
+def _format_error(exc):
+    """Return a user-friendly error message."""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "Request timed out while fetching the webpage."
+
+    if isinstance(exc, requests.exceptions.TooManyRedirects):
+        return "The webpage redirected too many times."
+
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "SSL error while connecting to the webpage."
+
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "Could not connect to the webpage."
+
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = exc.response.status_code if exc.response is not None else None
+
+        if status == 401:
+            return "The webpage requires authentication (HTTP 401)."
+
+        if status == 403:
+            return "The webpage denied automated access (HTTP 403)."
+
+        if status == 404:
+            return "The webpage was not found (HTTP 404)."
+
+        if status == 429:
+            return "The webpage rate-limited the request (HTTP 429)."
+
+        return f"The webpage returned HTTP {status}."
+
+    return str(exc)
 
 
 def load_urls(urls):
     """
-    Load every URL independently.
+    Load webpages into LangChain Documents.
 
     Returns:
-        documents: successfully extracted documents
-        errors: compatibility list for the existing UI
-        source_results: detailed status for every submitted URL
+        documents: successfully extracted Documents
+        errors: dictionary of URL -> error message
+        source_results: per-source processing status
     """
     documents = []
     errors = []
     source_results = []
 
     for url in normalize_urls(urls):
-        ok, reason = _preflight_url(url)
-
-        if not ok:
-            result = {
-                "url": url,
-                "status": "failed",
-                "documents": 0,
-                "reason": reason,
-            }
-            source_results.append(result)
-            errors.append({"url": url, "error": reason})
-            continue
-
         try:
-            loader = UnstructuredURLLoader(urls=[url])
-            loaded = loader.load()
+            html, final_url = _fetch_page(url)
+            text = _extract_text(html)
 
-            if not loaded:
-                reason = "The page was reachable, but no readable text could be extracted."
-                source_results.append(
-                    {
-                        "url": url,
-                        "status": "failed",
-                        "documents": 0,
-                        "reason": reason,
-                    }
+            if not text or len(text.strip()) < 100:
+                raise ValueError(
+                    "The webpage did not contain enough readable text."
                 )
-                errors.append({"url": url, "error": reason})
-                continue
 
-            for document in loaded:
-                document.metadata["source"] = url
+            document = Document(
+                page_content=text,
+                metadata={
+                    "source": url,
+                    "final_url": final_url,
+                    "title": urlparse(final_url).netloc,
+                },
+            )
 
-            documents.extend(loaded)
+            documents.append(document)
+
             source_results.append(
                 {
                     "url": url,
                     "status": "success",
-                    "documents": len(loaded),
-                    "reason": "Source loaded and text extracted successfully.",
+                    "documents": 1,
+                    "reason": "",
                 }
             )
 
         except Exception as exc:
-            reason = _explain_exception(exc)
+            reason = _format_error(exc)
+
+            errors.append(
+                {
+                    "url": url,
+                    "error": reason,
+                }
+            )
+
             source_results.append(
                 {
                     "url": url,
@@ -169,6 +199,5 @@ def load_urls(urls):
                     "reason": reason,
                 }
             )
-            errors.append({"url": url, "error": reason})
 
     return documents, errors, source_results
