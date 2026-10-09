@@ -6,15 +6,24 @@ from src.llm import get_llm
 from src.prompt import get_rag_prompt
 
 
-def create_rag_pipeline(urls):
-    """Build a RAG index while preserving per-source load status."""
-    documents, errors, source_results = load_urls(urls)
+def create_rag_pipeline(
+    urls=None,
+    documents=None,
+    errors=None,
+    source_results=None,
+):
+    """Build a RAG index from URLs or already-extracted documents."""
+
+    if documents is None:
+        if not urls:
+            raise ValueError("No URLs or documents were provided.")
+        documents, errors, source_results = load_urls(urls)
+
+    errors = errors or []
+    source_results = source_results or []
 
     if not documents:
-        raise ValueError(
-            "None of the provided URLs could be loaded. "
-            "Check the source errors and verify the URLs."
-        )
+        raise ValueError("No usable documents were provided.")
 
     chunks = split_documents(documents)
 

@@ -1,103 +1,76 @@
-# 🔎 SourceLens AI
+# SourceLens AI — Document & Web RAG V2
 
-A multi-source Retrieval-Augmented Generation research assistant built with Streamlit, LangChain, ChromaDB, local Hugging Face embeddings, and Groq.
+This version extends SourceLens from URL-only RAG to document RAG.
 
-## Features
+## Supported inputs
 
-- Add 1–10 URLs
-- Multiple research modes: AI, Product, Research Papers, Documentation, Company Research
-- Process sources once and ask multiple questions
-- Grounded answers using only retrieved source context
-- Source citations `[1]`, `[2]`, etc.
-- **Answer mode**: global top-K retrieval
-- **Compare Sources mode**: top-K retrieval independently from every readable source
-- One citation number per unique source, even when multiple chunks are retrieved
-- Retrieved evidence with relevance scores
-- Per-URL failure handling with readable error messages
-- Research history
-- Modular RAG architecture
+- Web URLs
+- Text PDFs
+- Scanned/image-only PDFs with local Tesseract OCR
+- DOCX
+- TXT
 
-## Compare Sources retrieval
+## Pipeline
 
-Normal questions use global similarity retrieval.
+Web/PDF/DOCX/TXT
+→ local extraction
+→ local OCR when needed
+→ LangChain Documents
+→ recursive chunking
+→ local Hugging Face embeddings
+→ local ChromaDB
+→ similarity retrieval
+→ relevant context
+→ Groq answer generation
 
-Comparison questions deliberately retrieve evidence independently from each readable URL:
+## Privacy
 
-```text
-Source A → top K chunks
-Source B → top K chunks
-Source C → top K chunks
-             ↓
-        source-aware context
-             ↓
-          Groq LLM
-```
+Document parsing, OCR, embeddings and ChromaDB are local when running the app locally.
 
-This prevents one source from dominating the global top-K results and makes multi-source comparisons more reliable.
+In the default Groq mode, the retrieved context is sent to Groq for answer generation. For highly confidential material, use the app locally and do not deploy it publicly. A fully local LLM mode can be added later.
 
-## Architecture
+Never commit `.streamlit/secrets.toml` or private documents to GitHub.
 
-```text
-URLs
- ↓
-Per-URL reachability check
- ↓
-Unstructured URL Loader
- ↓
-Documents + source metadata
- ↓
-Recursive Text Splitter
- ↓
-Hugging Face Embeddings
- ↓
-ChromaDB
- ↓
- ┌───────────────────────────────┐
- │ Answer: global top-K          │
- │ Compare: top-K per source     │
- └───────────────────────────────┘
- ↓
-Source-numbered context
- ↓
-Groq LLM
- ↓
-Grounded Answer + Citations + Evidence
-```
+## Setup
 
-## Run locally
-
-```bash
+```powershell
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Create:
+
+`.streamlit/secrets.toml`
+
+with:
+
+```toml
+GROQ_API_KEY = "your-key"
+```
+
+Run:
+
+```powershell
 streamlit run app.py
 ```
 
-Create `.streamlit/secrets.toml` using `.streamlit/secrets.toml.example` and add:
+## OCR setup on Windows
 
-```toml
-GROQ_API_KEY = "your-key-here"
+Scanned PDFs require Tesseract OCR.
+
+1. Install Tesseract OCR.
+2. Ensure `tesseract.exe` is on your PATH.
+3. Restart PowerShell/VS Code.
+4. Verify:
+
+```powershell
+tesseract --version
 ```
 
-## Project structure
+Then enable **OCR for scanned PDF pages** in SourceLens.
 
-```text
-SourceLens_AI/
-├── app.py
-├── requirements.txt
-├── README.md
-├── .gitignore
-├── .streamlit/
-│   └── secrets.toml.example
-├── src/
-│   ├── embeddings.py
-│   ├── llm.py
-│   ├── loader.py
-│   ├── prompt.py
-│   ├── rag_pipeline.py
-│   ├── retriever.py
-│   ├── splitter.py
-│   └── vectorstore.py
-└── utils/
-    └── helpers.py
-```
+## Important
+
+The `chroma_db/` folder is generated locally and is ignored by Git.
+Private uploaded documents are also ignored by Git via `.gitignore`.
