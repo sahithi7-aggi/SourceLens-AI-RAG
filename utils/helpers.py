@@ -1,54 +1,34 @@
-from urllib.parse import urlparse
-
-
 MODE_CONFIG = {
-    "🤖 AI Research": {
-        "description": "Compare AI platforms, models, APIs, agents and developer capabilities.",
-        "question": "Compare the main approaches described by these AI sources.",
-        "examples": [
-            "How do these companies approach tool calling?",
-            "What are the main differences between their agent architectures?",
-            "Compare the capabilities described by each source.",
-        ],
+    "AI": {
+        "description": "General AI and technology research.",
+        "question": "What are the main points across these sources?",
+        "examples": ["Summarize the main ideas and supporting evidence."],
     },
-    "🛒 Product Research": {
-        "description": "Research products from the sources you provide and compare their specifications.",
-        "question": "Compare the products described by these sources.",
-        "examples": [
-            "Which product is best for programming?",
-            "Compare price, performance and key specifications.",
-            "What are the major trade-offs?",
-        ],
+    "Product": {
+        "description": "Product and feature research.",
+        "question": "What are the important product capabilities?",
+        "examples": ["What are the key features and limitations?"],
     },
-    "📄 Research Papers": {
-        "description": "Compare papers, approaches, findings, limitations and research directions.",
-        "question": "What problem are these papers trying to solve?",
-        "examples": [
-            "What problem are all these papers solving?",
-            "How are their approaches different?",
-            "What limitations do the authors mention?",
-        ],
+    "Research Papers": {
+        "description": "Research-oriented analysis.",
+        "question": "What are the main findings?",
+        "examples": ["What methodology and findings are described?"],
     },
-    "💻 Documentation": {
-        "description": "Ask questions across technical documentation and implementation guides.",
-        "question": "Explain the main concepts described in these documents.",
-        "examples": [
-            "How does this technology work?",
-            "How would I implement the approach described here?",
-            "Compare how these technologies solve the same problem.",
-        ],
+    "Documentation": {
+        "description": "Technical documentation analysis.",
+        "question": "How does this work?",
+        "examples": ["Explain the main workflow and important details."],
     },
-    "🏢 Company Research": {
-        "description": "Research companies using official pages, engineering blogs, careers and reports.",
-        "question": "What are the major themes across these company sources?",
-        "examples": [
-            "What technologies and engineering areas are mentioned?",
-            "What are the company's major products?",
-            "Generate interview questions from these sources.",
-        ],
+    "Company Research": {
+        "description": "Company and business research.",
+        "question": "What are the important company details?",
+        "examples": ["What are the key facts and risks?"],
     },
 }
 
 
 def hostname(url):
-    return urlparse(url).netloc.replace("www.", "")
+    from urllib.parse import urlparse
+    if url.startswith(("http://", "https://")):
+        return urlparse(url).netloc.replace("www.", "") or url
+    return url
